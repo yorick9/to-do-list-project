@@ -100,16 +100,17 @@
             taskList.innerHTML = '';
 
             tasks.forEach(task => {
+                const status = task.status ?? (task.completed === 1 ? 'DONE' : 'OPEN');
                 const li = document.createElement('li');
-                li.className = task.status;
+                li.className = status;
 
                 li.innerHTML = `
                     <span><strong>${task.title}</strong></span>
                     <div class="task-actions">
                         <select onchange="updateStatus(${task.id}, this.value)">
-                            <option value="OPEN" ${task.status === 'OPEN' ? 'selected' : ''}>OPEN</option>
-                            <option value="IN_PROGRESS" ${task.status === 'IN_PROGRESS' ? 'selected' : ''}>IN PROGRESS</option>
-                            <option value="DONE" ${task.status === 'DONE' ? 'selected' : ''}>DONE</option>
+                            <option value="OPEN" ${status === 'OPEN' ? 'selected' : ''}>OPEN</option>
+                            <option value="IN_PROGRESS" ${status === 'IN_PROGRESS' ? 'selected' : ''}>IN PROGRESS</option>
+                            <option value="DONE" ${status === 'DONE' ? 'selected' : ''}>DONE</option>
                         </select>
                         <button class="delete-btn" onclick="deleteTask(${task.id})">Supprimer</button>
                     </div>
