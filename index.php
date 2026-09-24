@@ -99,7 +99,7 @@
             const taskList = document.getElementById('taskList');
             taskList.innerHTML = '';
 
-            tasks.forEach(task => {
+            (Array.isArray(tasks) ? tasks : []).forEach(task => {
                 const status = task.status ?? (task.completed === 1 ? 'DONE' : 'OPEN');
                 const li = document.createElement('li');
                 li.className = status;

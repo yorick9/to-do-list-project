@@ -2,109 +2,115 @@
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
-// En-têtes pour autoriser les requêtes (CORS) et renvoyer du JSON
+
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE");
 header("Access-Control-Allow-Headers: Content-Type");
 
-// Paramètres de connexion à la base de données (à adapter si besoin)
-$host = 'localhost';
-$db_name = 'todo_db'; // Remplace par le nom de ta base de données
-$username = 'root';
-$password = '';
+$dataFile = 'tasks.json';
 
-try {
-    $pdo = new PDO("mysql:host=$host;dbname=$db_name;charset=utf8", $username, $password);
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-} catch (PDOException $e) {
-    echo json_encode(["error" => "Erreur de connexion : " . $e->getMessage()]);
-    exit();
-}
-
-function normalizeTaskStatus($completed): string {
-    return ((int)$completed === 1) ? 'DONE' : 'OPEN';
-}
-
-function completedFromStatus($status): int {
-    return strtoupper((string)$status) === 'DONE' ? 1 : 0;
-}
-
-function getRequestId(array $data = []): ?int {
-    $id = $_GET['id'] ?? $data['id'] ?? null;
-
-    if ($id === null || $id === '') {
-        return null;
+// Fonction utilitaire pour lire les tâches du fichier JSON
+function readTasks($file) {
+    if (!file_exists($file)) {
+        return [];
     }
-
-    return (int)$id;
+    $content = file_get_contents($file);
+    $tasks = json_decode($content, true);
+    return is_array($tasks) ? $tasks : [];
 }
 
-// Récupération de la méthode HTTP (GET, POST, etc.)
+// Fonction utilitaire pour sauvegarder les tâches dans le fichier JSON
+function writeTasks($file, $tasks) {
+    file_put_contents($file, json_encode(values: $tasks, flags: JSON_PRETTY_PRINT));
+}
+
+function normalizeStatusValue(?string $status): string {
+    $normalized = strtoupper(trim((string)($status ?? 'OPEN')));
+    if (in_array($normalized, ['OPEN', 'IN_PROGRESS', 'DONE'], true)) {
+        return $normalized;
+    }
+    return 'OPEN';
+}
+
 $method = $_SERVER['REQUEST_METHOD'];
 $data = json_decode(file_get_contents("php://input"), true);
+$tasks = readTasks($dataFile);
 
 switch ($method) {
     case 'GET':
-        // Récupérer toutes les tâches
-        $stmt = $pdo->query("SELECT * FROM tasks ORDER BY id DESC");
-        $tasks = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        $tasks = array_map(function ($task) {
-            $task['status'] = normalizeTaskStatus($task['completed'] ?? 0);
-            return $task;
-        }, $tasks);
-
+        // Renvoie toutes les tâches
         echo json_encode($tasks);
         break;
 
     case 'POST':
-        // Ajouter une nouvelle tâche
         $title = trim((string)($data['title'] ?? ''));
-        $status = $data['status'] ?? 'OPEN';
+        $status = normalizeStatusValue($data['status'] ?? 'OPEN');
 
         if ($title !== '') {
-            $stmt = $pdo->prepare("INSERT INTO tasks (title, completed) VALUES (:title, :completed)");
-            $stmt->execute([
+            // Création d'un nouvel ID unique basé sur le timestamp ou le max ID
+            $newId = count($tasks) > 0 ? max(array_column($tasks, 'id')) + 1 : 1;
+            
+            $newTask = [
+                'id' => $newId,
                 'title' => $title,
-                'completed' => completedFromStatus($status)
-            ]);
-            echo json_encode(["success" => true, "message" => "Tâche ajoutée avec succès"]);
+                'completed' => ($status === 'DONE' ? 1 : 0),
+                'status' => $status
+            ];
+
+            // On ajoute au début du tableau pour les voir en haut (ORDER BY id DESC équivalent)
+            array_unshift($tasks, $newTask);
+            writeTasks($dataFile, $tasks);
+
+            echo json_encode(["success" => true, "message" => "Tâche ajoutée avec succès", "status" => $status]);
         } else {
             echo json_encode(["success" => false, "message" => "Le titre est vide"]);
         }
         break;
 
     case 'PUT':
-        // Modifier une tâche (marquer comme complétée ou non)
-        $id = getRequestId($data ?? []);
-
+        $id = $_GET['id'] ?? $data['id'] ?? null;
         if ($id !== null) {
-            $status = $data['status'] ?? 'OPEN';
-            $completed = completedFromStatus($status);
+            $status = normalizeStatusValue($data['status'] ?? 'OPEN');
+            $updated = false;
 
-            $stmt = $pdo->prepare("UPDATE tasks SET completed = :completed WHERE id = :id");
-            $stmt->execute([
-                'completed' => $completed,
-                'id' => $id
-            ]);
-            echo json_encode([
-                "success" => true,
-                "message" => "Tâche mise à jour",
-                "status" => normalizeTaskStatus($completed)
-            ]);
+            foreach ($tasks as &$task) {
+                if ($task['id'] == $id) {
+                    $task['status'] = $status;
+                    $task['completed'] = ($status === 'DONE' ? 1 : 0);
+                    $updated = true;
+                    break;
+                }
+            }
+            unset($task);
+
+            if ($updated) {
+                writeTasks($dataFile, $tasks);
+                echo json_encode(["success" => true, "message" => "Tâche mise à jour", "status" => $status]);
+            } else {
+                echo json_encode(["success" => false, "message" => "Tâche non trouvée"]);
+            }
         } else {
             echo json_encode(["success" => false, "message" => "ID manquant"]);
         }
         break;
 
     case 'DELETE':
-        // Supprimer une tâche
-        $id = getRequestId($data ?? []);
+        $id = $_GET['id'] ?? $data['id'] ?? null;
         if ($id !== null) {
-            $stmt = $pdo->prepare("DELETE FROM tasks WHERE id = :id");
-            $stmt->execute(['id' => $id]);
-            echo json_encode(["success" => true, "message" => "Tâche supprimée"]);
+            $initialCount = count($tasks);
+            $tasks = array_values(array_filter($tasks, function($task) use ($id) {
+                return $task['id'] != $id;
+            }));
+
+            if (count($tasks) < $initialCount) {
+                writeTasks($dataFile, $tasks);
+                echo json_encode(["success" => true, "message" => "Tâche supprimée"]);
+            } else {
+                echo json_encode(["success" => false, "message" => "Tâche non trouvée"]);
+            }
+        } else {
+            echo json_encode(["success" => false, "message" => "ID manquant"]);
         }
         break;
 
