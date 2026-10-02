@@ -138,23 +138,25 @@
         fetchTasks();
     });
 
-    // 3. UPDATE : Modifier le statut d'une tâche
-    async function updateStatus(id, newStatus) {
-        await fetch(`${apiUrl}?id=${id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status: newStatus })
-        });
-        fetchTasks();
-    }
+    /// 3. UPDATE : Modifier le statut d'une tâche
+async function updateStatus(id, newStatus) {
+    await fetch(`${apiUrl}?id=${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: id, status: newStatus })   // 👈 seul changement : ajout de "id: id"
+    });
+    fetchTasks();
+}
 
-    // 4. DELETE : Supprimer une tâche
-    async function deleteTask(id) {
-        await fetch(`${apiUrl}?id=${id}`, {
-            method: 'DELETE'
-        });
-        fetchTasks();
-    }
+    // APRÈS
+async function deleteTask(id) {
+    await fetch(`${apiUrl}?id=${id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: id })   // 👈 ajout du body
+    });
+    fetchTasks();
+}
 
     // Charger les tâches dès l'ouverture de la page
     fetchTasks();
